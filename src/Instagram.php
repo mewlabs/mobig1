@@ -93,6 +93,14 @@ class Instagram implements ExperimentsInterface
     public static $allowDangerousWebUsageAtMyOwnRisk = false;
 
     /**
+     * Set this value to false for the recent
+     * logins. This is required to use this API
+     * in a webpage for consecutive
+     * @var boolean
+     */
+    public static $sendLoginFlow = true;
+
+    /**
      * UUID.
      *
      * @var string
@@ -511,6 +519,10 @@ class Instagram implements ExperimentsInterface
 
             // Full (re-)login successfully completed. Return server response.
             return $response;
+        }
+
+        if (!self::$sendLoginFlow) {
+            return null;
         }
 
         // Attempt to resume an existing session, or full re-login if necessary.
