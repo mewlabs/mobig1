@@ -26,9 +26,6 @@ class Account extends RequestCollection
     {
         return $this->ig->request('accounts/current_user/')
             ->addParam('edit', true)
-            ->addPost('_uuid', $this->ig->uuid)
-            ->addPost('_uid', $this->ig->account_id)
-            ->addPost('_csrftoken', $this->ig->client->getToken())
             ->getResponse(new Response\UserInfoResponse());
     }
 
@@ -57,7 +54,7 @@ class Account extends RequestCollection
         $biography)
     {
         if (!is_string($biography) || strlen($biography) > 150) {
-            throw new InvalidArgumentException('Please provide a 0 to 150 character string as biography.');
+            throw new \InvalidArgumentException('Please provide a 0 to 150 character string as biography.');
         }
 
         return $this->ig->request('accounts/set_biography/')
@@ -221,6 +218,71 @@ class Account extends RequestCollection
             ->addPost('_uid', $this->ig->account_id)
             ->addPost('_csrftoken', $this->ig->client->getToken())
             ->getResponse(new Response\UserInfoResponse());
+    }
+
+    /**
+     * Switches your account to business profile.
+     *
+     * In order to switch your account to Business profile you MUST
+     * call Account::setBusinessInfo().
+     *
+     * @throws \InstagramAPI\Exception\InstagramException
+     *
+     * @return \InstagramAPI\Response\SwitchBusinessProfileResponse
+     *
+     * @see Account::setBusinessInfo() sets required data to become a business profile.
+     */
+    public function switchToBusinessProfile()
+    {
+        return $this->ig->request('business_conversion/get_business_convert_social_context/')
+            ->getResponse(new Response\SwitchBusinessProfileResponse());
+    }
+
+    /**
+     * Switches your account to personal profile.
+     *
+     * @throws \InstagramAPI\Exception\InstagramException
+     *
+     * @return \InstagramAPI\Response\SwitchPersonalProfileResponse
+     */
+    public function switchToPersonalProfile()
+    {
+        return $this->ig->request('accounts/convert_to_personal/')
+            ->addPost('_uuid', $this->ig->uuid)
+            ->addPost('_uid', $this->ig->account_id)
+            ->addPost('_csrftoken', $this->ig->client->getToken())
+            ->getResponse(new Response\SwitchPersonalProfileResponse());
+    }
+
+    /**
+     * Sets contact information for business profile.
+     *
+     * @param string $phoneNumber Phone number with country code. Format: +34123456789.
+     * @param string $email       Email.
+     * @param string $categoryId  TODO: Info.
+     *
+     * @throws \InstagramAPI\Exception\InstagramException
+     *
+     * @return \InstagramAPI\Response\CreateBusinessInfoResponse
+     */
+    public function setBusinessInfo(
+        $phoneNumber,
+        $email,
+        $categoryId)
+    {
+        return $this->ig->request('accounts/create_business_info/')
+            ->addPost('set_public', 'true')
+            ->addPost('entry_point', 'setting')
+            ->addPost('public_phone_contact', json_encode([
+                'public_phone_number'       => $phoneNumber,
+                'business_contact_method'   => 'CALL',
+            ]))
+            ->addPost('public_email', $email)
+            ->addPost('category_id', $categoryId)
+            ->addPost('_uuid', $this->ig->uuid)
+            ->addPost('_uid', $this->ig->account_id)
+            ->addPost('_csrftoken', $this->ig->client->getToken())
+            ->getResponse(new Response\CreateBusinessInfoResponse());
     }
 
     /**
@@ -426,7 +488,7 @@ class Account extends RequestCollection
     {
         $cleanNumber = '+'.preg_replace('/[^0-9]/', '', $phoneNumber);
 
-        $response = $this->ig->request('accounts/enable_sms_two_factor/')
+        $this->ig->request('accounts/enable_sms_two_factor/')
             ->addPost('_uuid', $this->ig->uuid)
             ->addPost('_uid', $this->ig->account_id)
             ->addPost('_csrftoken', $this->ig->client->getToken())
@@ -636,7 +698,7 @@ class Account extends RequestCollection
             ->addPost('_uuid', $this->ig->uuid)
             ->addPost('_csrftoken', $this->ig->client->getToken())
             ->addPost('users_ids', $this->ig->account_id)
-            ->addPost('device_id', $this->ig->device_id)
+            ->addPost('phone_id', $this->ig->phone_id)
             ->getResponse(new Response\BadgeNotificationsResponse());
     }
 }

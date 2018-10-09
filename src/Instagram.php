@@ -207,6 +207,8 @@ class Instagram implements ExperimentsInterface
     public $hashtag;
     /** @var Request\Highlight Collection of Highlight related functions. */
     public $highlight;
+    /** @var Request\TV Collection of Instagram TV functions. */
+    public $tv;
     /** @var Request\Internal Collection of Internal (non-public) functions. */
     public $internal;
     /** @var Request\Live Collection of Live related functions. */
@@ -219,6 +221,8 @@ class Instagram implements ExperimentsInterface
     public $people;
     /** @var Request\Push Collection of Push related functions. */
     public $push;
+    /** @var Request\Shopping Collection of Shopping related functions. */
+    public $shopping;
     /** @var Request\Story Collection of Story related functions. */
     public $story;
     /** @var Request\Timeline Collection of Timeline related functions. */
@@ -292,12 +296,14 @@ class Instagram implements ExperimentsInterface
         $this->discover = new Request\Discover($this);
         $this->hashtag = new Request\Hashtag($this);
         $this->highlight = new Request\Highlight($this);
+        $this->tv = new Request\TV($this);
         $this->internal = new Request\Internal($this);
         $this->live = new Request\Live($this);
         $this->location = new Request\Location($this);
         $this->media = new Request\Media($this);
         $this->people = new Request\People($this);
         $this->push = new Request\Push($this);
+        $this->shopping = new Request\Shopping($this);
         $this->story = new Request\Story($this);
         $this->timeline = new Request\Timeline($this);
         $this->usertag = new Request\Usertag($this);
@@ -416,6 +422,9 @@ class Instagram implements ExperimentsInterface
      * two-factor login example to see how to handle that.
      *
      * @param string $username           Your Instagram username.
+     *                                   You can also use your email or phone,
+     *                                   but take in mind that they won't work
+     *                                   when you have two factor auth enabled.
      * @param string $password           Your Instagram password.
      * @param int    $appRefreshInterval How frequently `login()` should act
      *                                   like an Instagram app that's been
@@ -538,6 +547,7 @@ class Instagram implements ExperimentsInterface
      * you will be logged in after this function call.
      *
      * @param string $username            Your Instagram username.
+     *                                    Email and phone aren't allowed here.
      * @param string $password            Your Instagram password.
      * @param string $twoFactorIdentifier Two factor identifier, obtained in
      *                                    login() response. Format: `123456`.
@@ -580,12 +590,14 @@ class Instagram implements ExperimentsInterface
 
         $response = $this->request('accounts/two_factor_login/')
             ->setNeedsAuth(false)
+            // 1 - SMS, 2 - Messenger (?), 3 - TOTP, 0 - ??
+            ->addPost('verification_method', '1')
             ->addPost('verification_code', $verificationCode)
             ->addPost('two_factor_identifier', $twoFactorIdentifier)
             ->addPost('_csrftoken', $this->client->getToken())
             ->addPost('username', $this->username)
             ->addPost('device_id', $this->device_id)
-            ->addPost('password', $this->password)
+            ->addPost('guid', $this->uuid)
             ->getResponse(new Response\LoginResponse());
 
         $this->_updateLoginState($response);
@@ -639,9 +651,9 @@ class Instagram implements ExperimentsInterface
             ->setNeedsAuth(false)
             ->addPost('two_factor_identifier', $twoFactorIdentifier)
             ->addPost('username', $username)
-            ->addPost('device_id', $this->ig->device_id)
-            ->addPost('guid', $this->ig->uuid)
-            ->addPost('_csrftoken', $this->ig->client->getToken())
+            ->addPost('device_id', $this->device_id)
+            ->addPost('guid', $this->uuid)
+            ->addPost('_csrftoken', $this->client->getToken())
             ->getResponse(new Response\TwoFactorLoginSMSResponse());
     }
 
@@ -696,9 +708,6 @@ class Instagram implements ExperimentsInterface
     public function sendRecoveryEmail(
         $username)
     {
-        // Set active user (without pwd), and create database entry if new user.
-        $this->_setUserWithoutPassword($username);
-
         // Verify that they can use the recovery email option.
         $userLookup = $this->userLookup($username);
         if (!$userLookup->getCanEmailReset()) {
@@ -732,9 +741,6 @@ class Instagram implements ExperimentsInterface
     public function sendRecoverySMS(
         $username)
     {
-        // Set active user (without pwd), and create database entry if new user.
-        $this->_setUserWithoutPassword($username);
-
         // Verify that they can use the recovery SMS option.
         $userLookup = $this->userLookup($username);
         if (!$userLookup->getHasValidPhone() || !$userLookup->getCanSmsReset()) {
@@ -927,12 +933,17 @@ class Instagram implements ExperimentsInterface
      */
     protected function _sendPreLoginFlow()
     {
+        // Reset zero rating rewrite rules.
+        $this->client->zeroRating()->reset();
         // Calling this non-token API will put a csrftoken in our cookie
         // jar. We must do this before any functions that require a token.
-        $this->internal->readMsisdnHeader();
+        $this->internal->readMsisdnHeader('ig_select_app');
         $this->internal->syncDeviceFeatures(true);
-        $this->internal->getZeroRatingTokenResult();
+        $this->internal->sendLauncherSync(true);
         $this->internal->logAttribution();
+        // We must fetch new token here, because it updates rewrite rules.
+        $this->internal->fetchZeroRatingToken();
+        // It must be at the end, because it's called when a user taps on login input.
         $this->account->setContactPointPrefill('prefill');
     }
 
@@ -1030,24 +1041,35 @@ class Instagram implements ExperimentsInterface
         //
         // You have been warned.
         if ($justLoggedIn) {
+            // Reset zero rating rewrite rules.
+            $this->client->zeroRating()->reset();
             // Perform the "user has just done a full login" API flow.
-            $this->internal->getZeroRatingTokenResult();
-            $this->people->getBootstrapUsers();
-            $this->story->getReelsTrayFeed();
-            $this->timeline->getTimelineFeed(null, ['recovered_from_crash' => true]);
+            $this->internal->sendLauncherSync(false);
             $this->internal->syncUserFeatures();
+            $this->timeline->getTimelineFeed(null, ['recovered_from_crash' => true]);
+            $this->story->getReelsTrayFeed();
+            $this->discover->getSuggestedSearches('users');
+            $this->discover->getRecentSearches();
+            $this->discover->getSuggestedSearches('blended');
+            //$this->story->getReelsMediaFeed();
+            // We must fetch new token here, because it updates rewrite rules.
+            $this->internal->fetchZeroRatingToken();
             $this->_registerPushChannels();
             $this->direct->getRankedRecipients('reshare', true);
             $this->direct->getRankedRecipients('raven', true);
             $this->direct->getInbox();
-            $this->account->getPresenceStatus();
-            $this->internal->getProfileNotice();
-            //$this->internal->getMegaphoneLog();
+            $this->direct->getPresences();
             $this->people->getRecentActivityInbox();
-            $this->internal->getQPFetch(Constants::SURFACE_PARAM[0]);
+            if ((int) $this->getExperimentParam('ig_android_loom_universe', 'cpu_sampling_rate_ms', 0) > 0) {
+                $this->internal->getLoomFetchConfig();
+            }
+            $this->internal->getProfileNotice();
             $this->media->getBlockedMedia();
-            $this->internal->getQPFetch(Constants::SURFACE_PARAM[1]);
+            $this->people->getBootstrapUsers();
+            //$this->internal->getQPCooldowns();
             $this->discover->getExploreFeed(null, true);
+            //$this->internal->getMegaphoneLog();
+            $this->internal->getQPFetch();
             $this->internal->getFacebookOTA();
         } else {
             $lastLoginTime = $this->settings->get('last_login');
@@ -1082,7 +1104,7 @@ class Instagram implements ExperimentsInterface
                 $this->_registerPushChannels();
                 //$this->internal->getMegaphoneLog();
                 $this->direct->getInbox();
-                $this->account->getPresenceStatus();
+                $this->direct->getPresences();
                 $this->people->getRecentActivityInbox();
                 $this->internal->getProfileNotice();
                 $this->discover->getExploreFeed();
@@ -1094,6 +1116,13 @@ class Instagram implements ExperimentsInterface
             if ($lastExperimentsTime === null || (time() - $lastExperimentsTime) > self::EXPERIMENTS_REFRESH) {
                 $this->internal->syncUserFeatures();
                 $this->internal->syncDeviceFeatures();
+            }
+
+            // Update zero rating token when it has been expired.
+            $expired = time() - (int) $this->settings->get('zr_expires');
+            if ($expired > 0) {
+                $this->client->zeroRating()->reset();
+                $this->internal->fetchZeroRatingToken($expired > 7200 ? 'token_stale' : 'token_expired');
             }
         }
 
@@ -1141,15 +1170,18 @@ class Instagram implements ExperimentsInterface
      *
      * @param string $experiment
      * @param string $param
+     * @param bool   $default
      *
      * @return bool
      */
     public function isExperimentEnabled(
         $experiment,
-        $param)
+        $param,
+        $default = false)
     {
         return isset($this->experiments[$experiment][$param])
-            && in_array($this->experiments[$experiment][$param], ['enabled', 'true', '1']);
+            ? in_array($this->experiments[$experiment][$param], ['enabled', 'true', '1'])
+            : $default;
     }
 
     /**
