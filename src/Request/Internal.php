@@ -131,6 +131,12 @@ class Internal extends RequestCollection
         }
 
         try {
+
+            $this->_uploadResumablePhoto($targetFeed, $internalMetadata);
+
+            /*
+             * deprecated unresumable file uploading from 2019-10
+             *
             // Upload photo file with one of our photo uploaders.
             if ($this->_useResumablePhotoUploader($targetFeed, $internalMetadata)) {
                 $this->_uploadResumablePhoto($targetFeed, $internalMetadata);
@@ -139,6 +145,8 @@ class Internal extends RequestCollection
                     $this->_uploadPhotoInOnePiece($targetFeed, $internalMetadata)
                 );
             }
+             */
+
         } catch (InstagramException $e) {
             // Pass Instagram's error as is.
             throw $e;
@@ -389,6 +397,16 @@ class Internal extends RequestCollection
         }
 
         try {
+
+            if ($this->_useResumableVideoUploader($targetFeed, $internalMetadata)) {
+                $this->_uploadResumableVideo($targetFeed, $internalMetadata);
+            } else {
+                $this->_uploadSegmentedVideo($targetFeed, $internalMetadata);
+            }
+
+            /*
+             * deprecated unresumable file uploading from 2019-10
+             *
             if ($this->_useSegmentedVideoUploader($targetFeed, $internalMetadata)) {
                 $this->_uploadSegmentedVideo($targetFeed, $internalMetadata);
             } elseif ($this->_useResumableVideoUploader($targetFeed, $internalMetadata)) {
@@ -400,6 +418,8 @@ class Internal extends RequestCollection
                 // Attempt to upload the video data.
                 $internalMetadata->setVideoUploadResponse($this->_uploadVideoChunks($targetFeed, $internalMetadata));
             }
+             */
+
         } catch (InstagramException $e) {
             // Pass Instagram's error as is.
             throw $e;
