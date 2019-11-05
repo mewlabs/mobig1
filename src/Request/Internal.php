@@ -2402,6 +2402,7 @@ class Internal extends RequestCollection
     {
         switch ($targetFeed) {
             case Constants::FEED_TIMELINE:
+            case Constants::FEED_TIMELINE_ALBUM:
                 $duration = $this->ig->getExperimentParam(
                     'ig_android_video_segmented_upload_universe',
                     'target_segment_duration_feed',
